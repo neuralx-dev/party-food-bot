@@ -2,7 +2,6 @@ import telebot
 import requests
 import logging
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
-import qrcode
 from io import BytesIO
 from dotenv import load_dotenv
 import os
@@ -29,24 +28,6 @@ def create_keyboard():
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("دریافت بلیت غذا"))
     return keyboard
-
-def generate_qr_image(data):
-    """Generate QR code image from data."""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    
-    img = qr.make_image(fill_color="black", back_color="white")
-    bio = BytesIO()
-    bio.name = 'qr.png'
-    img.save(bio, 'PNG')
-    bio.seek(0)
-    return bio
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -102,17 +83,22 @@ def process_id(message):
                     f"وضعیت: {status_text}\n"
                 )
                 
-                # Generate and send QR code as photo
+                # Download and send QR code as photo
                 try:
-                    qr_data = ticket['qr_code_url']
-                    qr_image = generate_qr_image(qr_data)
-                    bot.send_photo(
-                        message.chat.id,
-                        qr_image,
-                        caption=ticket_info,
-                        reply_to_message_id=message.message_id
-                    )
-                    logger.info(f"QR code sent for ticket {ticket['ticket_type']['title']}")
+                    qr_image_response = requests.get(ticket['qr_code_url'])
+                    if qr_image_response.status_code == 200:
+                        qr_image = BytesIO(qr_image_response.content)
+                        qr_image.name = 'qr.png'
+                        bot.send_photo(
+                            message.chat.id,
+                            qr_image,
+                            caption=ticket_info,
+                            reply_to_message_id=message.message_id
+                        )
+                        logger.info(f"QR code sent for ticket {ticket['ticket_type']['title']}")
+                    else:
+                        logger.error(f"Failed to download QR code: {qr_image_response.status_code}")
+                        bot.reply_to(message, "خطا در دریافت QR code")
                 except Exception as e:
                     logger.error(f"Error sending QR code: {e}")
                     bot.reply_to(message, "خطا در ارسال QR code")
